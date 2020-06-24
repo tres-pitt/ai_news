@@ -36,7 +36,6 @@ if __name__ == '__main__':
     #msg = twb.dbc.execute(qry).fetchall()
     #assert len(msg) == 1
     # unpack inelegantly due to max(id) fashion of select statement
-    breakpoint()
     id, msg, link, tweeted, id2 = twb.dbc.execute(qry).fetchall()[0]
     assert id == id2
     try:

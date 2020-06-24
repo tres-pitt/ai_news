@@ -73,7 +73,8 @@ class GatherNews:
                 if debug: print('found ' + link.get('href'))
                 #data[ind] = (link.get_text(), link.get('href'))
                 data.append((ind, link.get_text(), link.get('href'), tstamp))
-                stmt = "insert into HNFP (rank, post_title, post_link, tstamp) values ({}, '{}', '{}', '{}')".format(ind, link.get_text(), link.get('href'), tstamp)
+                stmt = """insert into HNFP (rank, post_title, post_link, tstamp) values ({}, "{}", "{}", "{}")""".format(ind, link.get_text(), link.get('href'), tstamp)
+                breakpoint()
                 try:
                     self.dbc.execute(stmt)
                 except Exception as e:
