@@ -69,7 +69,8 @@ class GatherNews:
         raise ValueError('storylink not found')
 
     # TODO: get all comments, store in some structure (eg graph)
-    def get_comment(self, id):
+    def get_comment(self, id, debug=False):
+        breakpoint()
         url = "https://news.ycombinator.com/item?id=" + id
         html = req.get(url).text
         soup = bs(html, 'html.parser')
@@ -77,21 +78,41 @@ class GatherNews:
         age = None
         user = None
         found = False
+        comments = []
+        comment_set = set()
         for thing in soup.find_all('tr'):
-            for x in thing.find_all('span'):
-                if x.get('class') is not None:
-                    if x.get('class')[0] == 'commtext':
-                        found = True
-                        comment = x.get_text()
-                    elif x.get('class')[0] == 'age':
-                        age = x.get_text()
-            for x in thing.find_all('a'):
-                if x.get('class') is not None:
-                    if x.get('class')[0] == 'hnuser':
-                        user = x.get_text()
-            if found:
-                return comment, age, user
-        raise ValueError("top comment not found")
+            trs = thing.find_all('tr')
+            tds = thing.find_all('td')
+            found = False
+            if debug:
+                print('')
+                print('len tr: ' + str(len(trs)))
+                print('len td: ' + str(len(tds)))
+                print(thing)
+                print('')
+            # arbitrary boundary; my test page had tr: 659/td: 1316
+            # TODO: record this number for posts of various ages
+            if len(trs) > 200:
+                if debug: print("comment block found")
+                for tr in trs:
+                    for x in tr.find_all('span'):
+                        if x.get('class') is not None:
+                            if x.get('class')[0] == 'commtext':
+                                found = True
+                                if debug: print("found comment")
+                                comment = x.get_text()
+                            elif x.get('class')[0] == 'age':
+                                age = x.get_text()
+                    for x in tr.find_all('a'):
+                        if x.get('class') is not None:
+                            if x.get('class')[0] == 'hnuser':
+                                user = x.get_text()
+                    if found and comment not in comment_set:
+                        comments.append((comment, age, user))
+                        comment_set.add(comment)
+                    else:
+                        if debug: print("no comment found")
+        return comments
 
     def scrape2(self, debug=False):
         soup = bs(self.html, 'html.parser')
@@ -118,11 +139,10 @@ class GatherNews:
                             print('')
                         rank = x.find('span').get_text().replace('.', '')
                         link, title = self.__get_storylink(x)
-                        comment, age, user = self.__get_comment(x.get('id'))
+                        top_comments = self.get_comment(x.get('id'))
                         breakpoint()
                     
 
-            #breakpoint()
         #    valid_link = False
         #    #print(ind)
         #    ind += 1
@@ -130,7 +150,6 @@ class GatherNews:
         #        continue
         #    print("post found (" + str(valid_ind) + ")")
         #    valid_ind += 1
-        #    breakpoint()
 
     # scrape front page of HN
     # store links in a dict of ints (inds) : tuples
@@ -160,7 +179,6 @@ class GatherNews:
                 if debug: print('skipping ' + hr)
                 pass
             else:
-                breakpoint()
                 if debug: print('found ' + hr)
                 #data[ind] = (link.get_text(), link.get('href'))
                 data.append((ind, link.get_text(), hr, tstamp))
@@ -185,8 +203,7 @@ class GatherNews:
 if __name__ == '__main__':
     gn = GatherNews('http://news.ycombinator.com')
     #gn.scrape(debug=True, insert=False)
-    #gn.scrape2(debug=True)
-    comment, age, user = gn.get_comment("23654188")
-    breakpoint()
+    #comments = gn.get_comment("23654188", debug=True)
+    gn.scrape2()
 
 # [1] https://stackoverflow.com/questions/7160737/python-how-to-validate-a-url-in-python-malformed-or-not
