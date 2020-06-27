@@ -1,5 +1,6 @@
 import sqlite3 as sql
 import requests as req
+from sys import exit
 from datetime import datetime
 from bs4 import BeautifulSoup as bs
 from urllib.parse import urlparse
@@ -26,7 +27,9 @@ class GatherNews:
         # Should probably keep a set of all unique domains/domain extensions that ever appear on HN front page
         # Also should not be a class variable lol
         self.allowed_suffixes = ['.org', '.net', '.com', '.edu', '.tech', \
-                                    '.io', '.co', '.so', '.info', '.fyi']
+                                    '.io', '.co', '.so', '.info', '.fyi', \
+                                    '.us'
+                                ]
         self.db = sql.connect('TechTweets.db')
         self.dbc = self.db.cursor()
 
@@ -48,11 +51,92 @@ class GatherNews:
                 return True
         return False
 
+    def __contains_valid_link(self, thing, debug):
+        for link in thing.find_all('a'):
+            if self.__valid_domain(link.get('href')):
+                if debug: print("VALID: " + link.get('href'))
+                return True
+            else:
+                if debug: print('invalid: ' + link.get('href'))
+        return False
+
+    def __get_storylink(self, html):
+        for link in html.find_all('a'):
+            if link.get('class') is None:
+                continue
+            if link.get('class')[0] == 'storylink':
+                return link.get('href'), link.get_text()
+        raise ValueError('storylink not found')
+
+    # TODO: get all comments, store in some structure (eg graph)
+    def get_comment(self, id):
+        url = "https://news.ycombinator.com/item?id=" + id
+        html = req.get(url).text
+        soup = bs(html, 'html.parser')
+        comment = None
+        age = None
+        user = None
+        found = False
+        for thing in soup.find_all('tr'):
+            for x in thing.find_all('span'):
+                if x.get('class') is not None:
+                    if x.get('class')[0] == 'commtext':
+                        found = True
+                        comment = x.get_text()
+                    elif x.get('class')[0] == 'age':
+                        age = x.get_text()
+            for x in thing.find_all('a'):
+                if x.get('class') is not None:
+                    if x.get('class')[0] == 'hnuser':
+                        user = x.get_text()
+            if found:
+                return comment, age, user
+        raise ValueError("top comment not found")
+
+    def scrape2(self, debug=False):
+        soup = bs(self.html, 'html.parser')
+        ind = 0
+        valid_ind = 1
+        for thing in soup.find_all('tr'):
+        #for thing in soup.find_all('td'):
+            trs = thing.find_all('tr')
+            tds = thing.find_all('td')
+            #if debug:
+            #    print('')
+            #    print('LEN: ' + str(len(thing)))
+            #    print('LEN, TR: ' + str(len(trs)))
+            #    print('LEN, TD: ' + str(len(tds)))
+            #    print(thing)
+            #    print('')
+            if len(trs) > 75:
+                my_rank = 1
+                for x in trs:
+                    if x.get('class')[0] == 'athing':
+                        if debug:
+                            print('')
+                            print(x)
+                            print('')
+                        rank = x.find('span').get_text().replace('.', '')
+                        link, title = self.__get_storylink(x)
+                        comment, age, user = self.__get_comment(x.get('id'))
+                        breakpoint()
+                    
+
+            #breakpoint()
+        #    valid_link = False
+        #    #print(ind)
+        #    ind += 1
+        #    if not self.__contains_valid_link(thing, debug):
+        #        continue
+        #    print("post found (" + str(valid_ind) + ")")
+        #    valid_ind += 1
+        #    breakpoint()
+
     # scrape front page of HN
     # store links in a dict of ints (inds) : tuples
     # then store them in sqlite
     # AskHN links arent included
-    def scrape(self, debug=False):
+    def scrape_links(self, debug=False, insert=True):
         soup = bs(self.html, 'html.parser')
         # lets see if we can match the number of links on HN
         #   if you get <30, you probably need to add new domain to allowed_suffixes class var
@@ -65,20 +149,27 @@ class GatherNews:
         #   I'll still populate data for now
         print("..........beginning 'a' traversal..........")
         for link in soup.find_all('a'):
-            #if link.get('href')[-4:] != '.com':
-            if not self.__valid_domain(link.get('href')):
-                if debug: print('skipping ' + link.get('href'))
+            # dont all a's have href's?
+            try:
+                hr = link.get('href')
+            except:
+                print('couldnt get href')
+                #exit()
+                continue
+            if not self.__valid_domain(hr):
+                if debug: print('skipping ' + hr)
                 pass
             else:
-                if debug: print('found ' + link.get('href'))
-                #data[ind] = (link.get_text(), link.get('href'))
-                data.append((ind, link.get_text(), link.get('href'), tstamp))
-                stmt = """insert into HNFP (rank, post_title, post_link, tstamp) values ({}, "{}", "{}", "{}")""".format(ind, link.get_text(), link.get('href'), tstamp)
                 breakpoint()
-                try:
-                    self.dbc.execute(stmt)
-                except Exception as e:
-                    print("failed to execute: " + stmt)
+                if debug: print('found ' + hr)
+                #data[ind] = (link.get_text(), link.get('href'))
+                data.append((ind, link.get_text(), hr, tstamp))
+                if insert:
+                    stmt = """insert into HNFP (rank, post_title, post_link, tstamp) values ({}, "{}", "{}", "{}")""".format(ind, link.get_text(), hr, tstamp)
+                    try:
+                        self.dbc.execute(stmt)
+                    except Exception as e:
+                        print("failed to execute: " + stmt)
                 ind += 1
         print("..........completed 'a' traversal..........")
         if debug: print("found " + str(ind) + " links")
@@ -93,6 +184,9 @@ class GatherNews:
 
 if __name__ == '__main__':
     gn = GatherNews('http://news.ycombinator.com')
-    gn.scrape(debug=True)
+    #gn.scrape(debug=True, insert=False)
+    #gn.scrape2(debug=True)
+    comment, age, user = gn.get_comment("23654188")
+    breakpoint()
 
 # [1] https://stackoverflow.com/questions/7160737/python-how-to-validate-a-url-in-python-malformed-or-not
