@@ -13,5 +13,11 @@ sakey integer primary key autoincrement,
 rank integer not null,
 post_title char(500) not null,
 post_link char(300) not null,
+cmnt1 text,
+cmnt1_age char(20),
+cmnt1_author char(15),
+cmnt2 text,
+cmnt2_age char(20),
+cmnt2_author char(15),
 tstamp char(16)
 );

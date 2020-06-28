@@ -5,20 +5,17 @@ from datetime import datetime
 from bs4 import BeautifulSoup as bs
 from urllib.parse import urlparse
 
-# TODO: detect AI/ML content (possible rabbit hole)
+# TODO: detect AI/ML content
 #       write to logs not just stdout
 #       store in its own repo
 #       set up mysql or pgsql remote db, to load automatically
-#       load top comment into string or blob field
-#           condition ^ on x hours elapsed
 
 # print list of tuples, one on each line
 def print_tuple_list(tl):
     for l in tl:
         print(l)
 
-# class to load sqlite database with tweets
-# HN-only for now
+# class to load sqlite database with HN posts
 class GatherNews:
     def __init__(self, url):
         self.site = url
@@ -28,10 +25,13 @@ class GatherNews:
         # Also should not be a class variable lol
         self.allowed_suffixes = ['.org', '.net', '.com', '.edu', '.tech', \
                                     '.io', '.co', '.so', '.info', '.fyi', \
-                                    '.us'
+                                    '.us', '.hr'
                                 ]
         self.db = sql.connect('TechTweets.db')
         self.dbc = self.db.cursor()
+
+    def __cre_tstamp(self):
+        return str(datetime.now())[:-10]
 
     # would HN ever give an all cap or mixed case domain?
     # TODO: use an actual library to do this!
@@ -65,12 +65,28 @@ class GatherNews:
             if link.get('class') is None:
                 continue
             if link.get('class')[0] == 'storylink':
-                return link.get('href'), link.get_text()
+                return link.get('href'), link.get_text().replace("\"", "'")
         raise ValueError('storylink not found')
 
+    # this feels inelegant
+    # construct sqlite insertion string
+    def __gen_ins_stmt(self, rank, title, link, top_comments, tstamp):
+        # even if we can perfectly scrape comments, lets account for the cases when there are 0 or 1 comments
+        # case when more than one comment is found
+        if len(top_comments) >= 2:
+            return  """insert into HNFP (rank, post_title, post_link, cmnt1, cmnt1_age, cmnt1_author, cmnt2, cmnt2_age, cmnt2_author, tstamp) values ({}, "{}", "{}", "{}", "{}","{}", "{}", "{}", "{}", "{}")""".\
+            format(rank, title, link, top_comments[0][0], top_comments[0][1],top_comments[0][2], top_comments[1][0], top_comments[1][1], top_comments[1][2], tstamp)
+        # case when a single comment is found
+        elif len(top_comments) == 1:
+            return  """insert into HNFP (rank, post_title, post_link, cmnt1, cmnt1_age, cmnt1_author, tstamp) values ({}, "{}", "{}", "{}", "{}","{}", "{}")""".\
+            format(rank, title, link, top_comments[0][0], top_comments[0][1],top_comments[0][2], tstamp)
+        # case when no comments are found
+        else:
+            return  """insert into HNFP (rank, post_title, post_link, tstamp) values ({}, "{}", "{}", "{}")""".\
+            format(rank, title, link, tstamp)
+            
     # TODO: get all comments, store in some structure (eg graph)
     def get_comment(self, id, debug=False):
-        breakpoint()
         url = "https://news.ycombinator.com/item?id=" + id
         html = req.get(url).text
         soup = bs(html, 'html.parser')
@@ -84,73 +100,66 @@ class GatherNews:
             trs = thing.find_all('tr')
             tds = thing.find_all('td')
             found = False
-            if debug:
-                print('')
-                print('len tr: ' + str(len(trs)))
-                print('len td: ' + str(len(tds)))
-                print(thing)
-                print('')
             # arbitrary boundary; my test page had tr: 659/td: 1316
             # TODO: record this number for posts of various ages
-            if len(trs) > 200:
+            if len(trs) > 5:
                 if debug: print("comment block found")
                 for tr in trs:
                     for x in tr.find_all('span'):
                         if x.get('class') is not None:
                             if x.get('class')[0] == 'commtext':
                                 found = True
-                                if debug: print("found comment")
-                                comment = x.get_text()
+                                #if debug: print("found comment")
+                                comment = x.get_text().replace("\"", "'")
                             elif x.get('class')[0] == 'age':
                                 age = x.get_text()
                     for x in tr.find_all('a'):
                         if x.get('class') is not None:
                             if x.get('class')[0] == 'hnuser':
                                 user = x.get_text()
-                    if found and comment not in comment_set:
-                        comments.append((comment, age, user))
-                        comment_set.add(comment)
+                    if found:
+                        if comment not in comment_set:
+                            comments.append((comment, age, user))
+                            comment_set.add(comment)
                     else:
-                        if debug: print("no comment found")
+                        pass
+            else:
+                pass
+        if len(comments) == 0:
+            print('no comments found for ' + url)
         return comments
 
-    def scrape2(self, debug=False):
+    def scrape(self, insert=True, debug=False):
         soup = bs(self.html, 'html.parser')
-        ind = 0
+        ind = 1
         valid_ind = 1
+        tstamp = self.__cre_tstamp()
         for thing in soup.find_all('tr'):
         #for thing in soup.find_all('td'):
             trs = thing.find_all('tr')
             tds = thing.find_all('td')
-            #if debug:
-            #    print('')
-            #    print('LEN: ' + str(len(thing)))
-            #    print('LEN, TR: ' + str(len(trs)))
-            #    print('LEN, TD: ' + str(len(tds)))
-            #    print(thing)
-            #    print('')
             if len(trs) > 75:
                 my_rank = 1
                 for x in trs:
-                    if x.get('class')[0] == 'athing':
-                        if debug:
-                            print('')
-                            print(x)
-                            print('')
-                        rank = x.find('span').get_text().replace('.', '')
-                        link, title = self.__get_storylink(x)
-                        top_comments = self.get_comment(x.get('id'))
-                        breakpoint()
+                    if x.get('class') is not None:
+                        if x.get('class')[0] == 'athing':
+                            rank = int(x.find('span').get_text().replace('.', ''))
+                            if int(my_rank) != rank:
+                                # do something
+                                if debug: print("rank - my_rank mismatch")
+                            link, title = self.__get_storylink(x)
+                            top_comments = self.get_comment(x.get('id'))
+                            if debug: print("found {} comments".format(len(top_comments)))
+                            ind += 1
+                            stmt = self.__gen_ins_stmt(rank, title, link, top_comments, tstamp)
+                            if insert:
+                                try:
+                                    self.dbc.execute(stmt)
+                                    self.db.commit()
+                                except Exception as e:
+                                    print("failed to execute: " + stmt)
+                                    print(e)
                     
-
-        #    valid_link = False
-        #    #print(ind)
-        #    ind += 1
-        #    if not self.__contains_valid_link(thing, debug):
-        #        continue
-        #    print("post found (" + str(valid_ind) + ")")
-        #    valid_ind += 1
-
     # scrape front page of HN
     # store links in a dict of ints (inds) : tuples
     # then store them in sqlite
@@ -163,7 +172,7 @@ class GatherNews:
         ind = 1
         #data = {}
         data = []
-        tstamp = str(datetime.now())[:-10]
+        tstamp = self.__cre_tstamp()
         # currently, I cant executemany (bulk insert a posteriori) with autoincrement sakey column
         #   I'll still populate data for now
         print("..........beginning 'a' traversal..........")
@@ -202,8 +211,8 @@ class GatherNews:
 
 if __name__ == '__main__':
     gn = GatherNews('http://news.ycombinator.com')
-    #gn.scrape(debug=True, insert=False)
-    #comments = gn.get_comment("23654188", debug=True)
-    gn.scrape2()
+    #comments = gn.get_comment("23668918", debug=True)
+    #gn.scrape(insert=False, debug=True)
+    gn.scrape()
 
 # [1] https://stackoverflow.com/questions/7160737/python-how-to-validate-a-url-in-python-malformed-or-not
