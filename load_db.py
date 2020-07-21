@@ -86,7 +86,7 @@ class GatherNews:
             format(rank, title, link, tstamp)
             
     # TODO: get all comments, store in some structure (eg graph)
-    def get_comment(self, id, debug=False):
+    def get_comment(self, id, debug=False, only_one=True):
         url = "https://news.ycombinator.com/item?id=" + id
         html = req.get(url).text
         soup = bs(html, 'html.parser')
@@ -121,6 +121,8 @@ class GatherNews:
                         if comment not in comment_set:
                             comments.append((comment, age, user))
                             comment_set.add(comment)
+                            if only_one:
+                                return comments
                     else:
                         pass
             else:

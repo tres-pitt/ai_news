@@ -13,3 +13,5 @@ TODO
 6) write scrapers for r/artifical and other sources
 7) some safety mechanism to prevent repeat tweets (?)
 8) convert HN "time stamps" to real time values; maybe compute time of original post/comment
+
+check out https://github.com/kotartemiy/pygooglenews
